@@ -45,6 +45,8 @@ alter table trips add column if not exists start_lat double precision;
 alter table trips add column if not exists start_lng double precision;
 alter table trips add column if not exists end_lat double precision;
 alter table trips add column if not exists end_lng double precision;
+alter table inspiration add column if not exists tags text[] not null default '{}';
+create index if not exists inspiration_tags_idx on inspiration using gin(tags);
 
 create index if not exists entries_user_trip_idx on entries(user_id, trip_id, created_at desc);
 create index if not exists inspiration_user_idx on inspiration(user_id, created_at desc);

@@ -69,6 +69,7 @@ const toInspo = (r) => ({
   color: r.color || '#C8E5D8',
   h: r.height || 180,
   media: r.media || [],
+  tags: r.tags || [],
 });
 
 // ---------- Header ----------
@@ -318,12 +319,18 @@ function Inspiration({ back, items, openItem }) {
   const [selected, setSelected] = useState([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const allTags = useMemo(() => {
+    const set = new Set(FILTER_TAGS);
+    items.forEach(it => (it.tags || []).forEach(t => set.add(t)));
+    return Array.from(set);
+  }, [items]);
+
   const filtered = useMemo(() => {
     const text = q.trim().toLowerCase();
     return items.filter(it => {
       const blob = (it.title + ' ' + it.note).toLowerCase();
       if (text && !blob.includes(text)) return false;
-      if (selected.length && !selected.some(tag => blob.includes(tag.toLowerCase()))) return false;
+      if (selected.length && !selected.some(tag => (it.tags || []).includes(tag))) return false;
       return true;
     });
   }, [items, q, selected]);
@@ -362,6 +369,13 @@ function Inspiration({ back, items, openItem }) {
                 <div className="p-3">
                   <div className="font-medium text-sm">{item.title}</div>
                   <div className="text-xs text-black/50 mt-1 line-clamp-3">{item.note}</div>
+                  {item.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {item.tags.slice(0,3).map(t => (
+                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/60">{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </button>
             );
@@ -371,6 +385,7 @@ function Inspiration({ back, items, openItem }) {
 
       {filtersOpen && (
         <FilterPanel
+          tags={allTags}
           selected={selected}
           onChange={setSelected}
           close={() => setFiltersOpen(false)}
@@ -380,7 +395,7 @@ function Inspiration({ back, items, openItem }) {
   );
 }
 
-function FilterPanel({ selected, onChange, close }) {
+function FilterPanel({ tags = FILTER_TAGS, selected, onChange, close }) {
   const toggle = (tag) => {
     onChange(selected.includes(tag) ? selected.filter(t => t !== tag) : [...selected, tag]);
   };
@@ -394,7 +409,7 @@ function FilterPanel({ selected, onChange, close }) {
         </div>
         <div className="text-xs uppercase tracking-wider text-black/50">Categories</div>
         <div className="flex flex-wrap gap-2">
-          {FILTER_TAGS.map(tag => {
+          {tags.map(tag => {
             const active = selected.includes(tag);
             return (
               <button
@@ -437,6 +452,13 @@ function InspoDetail({ back, item, onEdit }) {
       />
       <div className="px-5 space-y-4">
         <h2 className="text-xl font-semibold">{item.title}</h2>
+        {item.tags?.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {item.tags.map(t => (
+              <span key={t} className="text-xs px-3 py-1 rounded-full bg-black/5 text-black/60">{t}</span>
+            ))}
+          </div>
+        )}
         <div className="bg-white rounded-2xl p-4 shadow-soft text-[15px] leading-relaxed text-black/75">
           {item.note}
         </div>
@@ -455,16 +477,65 @@ function InspoDetail({ back, item, onEdit }) {
   );
 }
 
+function TagPicker({ value = [], onChange, suggestions = FILTER_TAGS }) {
+  const [custom, setCustom] = useState('');
+  const toggle = (tag) => {
+    onChange(value.includes(tag) ? value.filter(t => t !== tag) : [...value, tag]);
+  };
+  const addCustom = () => {
+    const t = custom.trim();
+    if (!t) return;
+    if (!value.includes(t)) onChange([...value, t]);
+    setCustom('');
+  };
+  const all = Array.from(new Set([...suggestions, ...value]));
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {all.map(tag => {
+          const active = value.includes(tag);
+          return (
+            <button
+              type="button"
+              key={tag}
+              onClick={() => toggle(tag)}
+              className="px-3 py-1.5 rounded-full text-sm border"
+              style={{
+                background: active ? BRAND : 'white',
+                color: active ? 'white' : '#2B2B2B',
+                borderColor: active ? BRAND : 'rgba(0,0,0,0.08)',
+              }}
+            >
+              {tag}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
+          placeholder="Add a tag…"
+          className="flex-1 rounded-full bg-white px-4 py-2 shadow-soft text-sm outline-none focus:ring-2 focus:ring-black/10"
+        />
+        <button type="button" onClick={addCustom} className="px-4 py-2 rounded-full bg-white border border-black/10 text-sm font-medium">Add</button>
+      </div>
+    </div>
+  );
+}
+
 function InspoForm({ back, onSave, initial, saving }) {
   const [title, setTitle] = useState(initial?.title || '');
   const [note, setNote] = useState(initial?.note || '');
   const [link, setLink] = useState(initial?.link && initial.link !== 'https://example.com' ? initial.link : '');
   const [media, setMedia] = useState(initial?.media || []);
+  const [tags, setTags] = useState(initial?.tags || []);
 
   const submit = (e) => {
     e?.preventDefault();
     if (!title.trim() && !note.trim()) return;
-    onSave({ title: title.trim() || 'Untitled', note: note.trim(), link: link.trim() || null, media });
+    onSave({ title: title.trim() || 'Untitled', note: note.trim(), link: link.trim() || null, media, tags });
   };
 
   const field = "w-full rounded-2xl bg-white px-4 py-3 shadow-soft outline-none focus:ring-2 focus:ring-black/10 text-[15px]";
@@ -482,6 +553,9 @@ function InspoForm({ back, onSave, initial, saving }) {
         </div>
         <div><label className={lbl}>Link (optional)</label>
           <input className={field} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" />
+        </div>
+        <div><label className={lbl}>Tags</label>
+          <TagPicker value={tags} onChange={setTags} />
         </div>
       </form>
       <ActionBar>

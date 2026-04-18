@@ -95,7 +95,7 @@ export async function getInspiration() {
   return data ?? [];
 }
 
-export async function createInspiration(userId, { title, note, link, media, color, height }) {
+export async function createInspiration(userId, { title, note, link, media, color, height, tags }) {
   const { data, error } = await supabase
     .from('inspiration')
     .insert({
@@ -106,6 +106,7 @@ export async function createInspiration(userId, { title, note, link, media, colo
       color: color || '#C8E5D8',
       height: height || 180,
       media: media || [],
+      tags: tags || [],
     })
     .select()
     .single();
@@ -121,6 +122,7 @@ export async function updateInspiration(id, fields) {
       note: fields.note,
       link: fields.link || null,
       media: fields.media || [],
+      tags: fields.tags || [],
     })
     .eq('id', id)
     .select()
@@ -135,10 +137,10 @@ export async function seedInspirationIfEmpty(userId) {
     .from('inspiration').select('*', { count: 'exact', head: true });
   if ((count ?? 0) > 0) return;
   const inspo = [
-    { title: 'Coastal walk near St Ives', note: 'Carbis Bay → St Ives via the coast path. Apparently the best stretch in Cornwall.', color: '#B8E0D2', height: 180 },
-    { title: 'Tiny café in Hay-on-Wye', note: 'Book-lined café above the second-hand bookshop. Cardamom buns.', color: '#F6CBA5', height: 220 },
-    { title: 'Wild swim spot — Dartmoor', note: 'Sharrah Pool on the Dart. 30 min walk in from Newbridge.', color: '#A9D4E8', height: 200 },
-    { title: 'Bakery in Bruton', note: 'At The Chapel. Weekend queue out the door.', color: '#E8C9D9', height: 160 },
+    { title: 'Coastal walk near St Ives', note: 'Carbis Bay → St Ives via the coast path. Apparently the best stretch in Cornwall.', color: '#B8E0D2', height: 180, tags: ['Walks', 'Views'] },
+    { title: 'Tiny café in Hay-on-Wye', note: 'Book-lined café above the second-hand bookshop. Cardamom buns.', color: '#F6CBA5', height: 220, tags: ['Cafés', 'Bookshops'] },
+    { title: 'Wild swim spot — Dartmoor', note: 'Sharrah Pool on the Dart. 30 min walk in from Newbridge.', color: '#A9D4E8', height: 200, tags: ['Swims'] },
+    { title: 'Bakery in Bruton', note: 'At The Chapel. Weekend queue out the door.', color: '#E8C9D9', height: 160, tags: ['Food'] },
   ].map(i => ({ user_id: userId, link: 'https://example.com', media: [], ...i }));
   const { error } = await supabase.from('inspiration').insert(inspo);
   if (error) throw error;
