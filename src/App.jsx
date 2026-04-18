@@ -14,19 +14,45 @@ import {
   updateInspiration,
   seedInspirationIfEmpty,
   dayLabel,
+  uploadMedia,
+  deleteMedia,
 } from './data';
 
 const BRAND = '#5DD9C1';
 
 // ---------- atoms ----------
-const Photo = ({ color = '#D6D2CA', h = 120, label }) => (
-  <div
-    className="w-full rounded-2xl flex items-end p-3 text-xs text-white/90 font-medium"
-    style={{ background: color, height: h, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
-  >
-    {label && <span className="drop-shadow">{label}</span>}
-  </div>
-);
+const Photo = ({ color = '#D6D2CA', h = 120, label, src, kind }) => {
+  if (src) {
+    if (kind === 'video') {
+      return (
+        <video
+          src={src}
+          className="w-full rounded-2xl object-cover"
+          style={{ height: h, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+          controls
+        />
+      );
+    }
+    return (
+      <img
+        src={src}
+        alt=""
+        className="w-full rounded-2xl object-cover"
+        style={{ height: h, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+      />
+    );
+  }
+  return (
+    <div
+      className="w-full rounded-2xl flex items-end p-3 text-xs text-white/90 font-medium"
+      style={{ background: color, height: h, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+    >
+      {label && <span className="drop-shadow">{label}</span>}
+    </div>
+  );
+};
+
+const firstMedia = (item) => (item?.media || []).find(m => m.url);
 
 const Pill = ({ children, active, onClick, className = '' }) => (
   <button
@@ -247,19 +273,22 @@ function TripScreen({ back, entries, openEntry, onEdit, onAddJournal }) {
                 <div key={day}>
                   <div className="px-5 text-xs uppercase tracking-wider text-black/50 mb-2">{day}</div>
                   <div className="flex gap-3 overflow-x-auto no-scrollbar px-5 pb-1">
-                    {entries.filter(e => e.day === day).map(e => (
+                    {entries.filter(e => e.day === day).map(e => {
+                      const m = firstMedia(e);
+                      return (
                       <button
                         key={e.id}
                         onClick={() => openEntry(e.id)}
                         className="shrink-0 w-56 bg-white rounded-2xl shadow-soft overflow-hidden text-left active:scale-[0.99] transition"
                       >
-                        <Photo color={e.color} h={110} />
+                        <Photo color={e.color} h={110} src={m?.url} kind={m?.kind} />
                         <div className="p-3">
                           <div className="font-medium text-sm">{e.title}</div>
                           <div className="text-xs text-black/50 mt-1 line-clamp-2">{e.text}</div>
                         </div>
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -304,8 +333,9 @@ function EntryDetail({ back, entry }) {
         <div className="bg-white rounded-2xl p-4 shadow-soft text-[15px] leading-relaxed text-black/75">
           {entry.text}
         </div>
-        <Photo color={entry.color} h={220} />
-        <Photo color="#DCD3C4" h={160} />
+        {(entry.media || []).filter(m => m.url).map(m => (
+          <Photo key={m.id} h={240} src={m.url} kind={m.kind} />
+        ))}
       </div>
     </div>
   );
@@ -358,14 +388,14 @@ function Inspiration({ back, items, openItem }) {
       ) : (
         <div className="px-5 columns-2 gap-3 space-y-3">
           {filtered.map(item => {
-            const hasPhoto = (item.media || []).some(m => m.kind === 'photo' || m.kind === 'upload');
+            const m = firstMedia(item);
             return (
               <button
                 key={item.id}
                 onClick={() => openItem(item.id)}
                 className="block w-full break-inside-avoid bg-white rounded-2xl shadow-soft overflow-hidden text-left mb-3"
               >
-                {hasPhoto && <Photo color={item.color} h={item.h} />}
+                {m && <Photo color={item.color} h={item.h} src={m.url} kind={m.kind} />}
                 <div className="p-3">
                   <div className="font-medium text-sm">{item.title}</div>
                   <div className="text-xs text-black/50 mt-1 line-clamp-3">{item.note}</div>
@@ -437,7 +467,7 @@ function FilterPanel({ tags = FILTER_TAGS, selected, onChange, close }) {
 }
 
 function InspoDetail({ back, item, onEdit }) {
-  const hasPhoto = (item.media || []).some(m => m.kind === 'photo' || m.kind === 'upload');
+  const mediaWithUrls = (item.media || []).filter(m => m.url);
   const hasLink = !!(item.link && item.link.trim() && item.link !== 'https://example.com');
   return (
     <div className="pb-28">
@@ -471,7 +501,9 @@ function InspoDetail({ back, item, onEdit }) {
             open website link
           </button>
         )}
-        {hasPhoto && <Photo color={item.color} h={240} />}
+        {mediaWithUrls.map(m => (
+          <Photo key={m.id} color={item.color} h={240} src={m.url} kind={m.kind} />
+        ))}
       </div>
     </div>
   );
@@ -525,12 +557,30 @@ function TagPicker({ value = [], onChange, suggestions = FILTER_TAGS }) {
   );
 }
 
-function InspoForm({ back, onSave, initial, saving }) {
+function InspoForm({ back, onSave, initial, saving, userId }) {
   const [title, setTitle] = useState(initial?.title || '');
   const [note, setNote] = useState(initial?.note || '');
   const [link, setLink] = useState(initial?.link && initial.link !== 'https://example.com' ? initial.link : '');
   const [media, setMedia] = useState(initial?.media || []);
   const [tags, setTags] = useState(initial?.tags || []);
+  const [uploading, setUploading] = useState(false);
+
+  const onFiles = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of files) uploaded.push(await uploadMedia(userId, f));
+      setMedia(prev => [...prev, ...uploaded]);
+    } catch (e) {
+      alert('Upload failed: ' + e.message);
+    } finally { setUploading(false); }
+  };
+
+  const removeMedia = async (m) => {
+    setMedia(prev => prev.filter(x => x.id !== m.id));
+    if (m.path) { try { await deleteMedia(m.path); } catch {} }
+  };
 
   const submit = (e) => {
     e?.preventDefault();
@@ -556,6 +606,28 @@ function InspoForm({ back, onSave, initial, saving }) {
         </div>
         <div><label className={lbl}>Tags</label>
           <TagPicker value={tags} onChange={setTags} />
+        </div>
+        <div><label className={lbl}>Media</label>
+          <label className="w-full bg-white rounded-2xl py-4 flex items-center justify-center gap-2 shadow-soft text-sm text-black/70 cursor-pointer">
+            <span style={{ color: BRAND }}><IconUpload /></span>
+            {uploading ? 'Uploading…' : 'Upload images or videos'}
+            <input type="file" accept="image/*,video/*" multiple
+              onChange={(e) => { onFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
+              className="hidden" />
+          </label>
+          {media.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto no-scrollbar mt-2">
+              {media.map(m => (
+                <div key={m.id} className="shrink-0 bg-white rounded-xl pr-3 py-2 pl-2 flex items-center gap-2 shadow-soft text-xs">
+                  {m.url && m.kind === 'photo' ? <img src={m.url} className="w-8 h-8 rounded-md object-cover" alt="" /> :
+                   m.url && m.kind === 'video' ? <video src={m.url} className="w-8 h-8 rounded-md object-cover" muted /> :
+                   <div className="w-8 h-8 rounded-md bg-black/10" />}
+                  <span className="max-w-[120px] truncate">{m.name}</span>
+                  <button type="button" onClick={() => removeMedia(m)} className="text-black/40"><IconX /></button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </form>
       <ActionBar>
@@ -598,33 +670,64 @@ function AddPicker({ close, pick }) {
   );
 }
 
-function AddForm({ close, back, category, onSave, saving }) {
+function AddForm({ close, back, category, onSave, saving, userId }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState([]);
+  const [uploading, setUploading] = useState(false);
 
-  const addMedia = (kind) => {
-    const names = {
-      photo: `photo_${Date.now().toString().slice(-4)}.jpg`,
-      upload: `file_${Date.now().toString().slice(-4)}.png`,
-      gps: `pin_${Date.now().toString().slice(-4)}.loc`,
-    };
-    setMedia(m => [...m, { id: Date.now() + Math.random(), kind, name: names[kind] }]);
+  const onFiles = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of files) {
+        const item = await uploadMedia(userId, f);
+        uploaded.push(item);
+      }
+      setMedia(prev => [...prev, ...uploaded]);
+    } catch (e) {
+      console.error(e);
+      alert('Upload failed: ' + e.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
+  const addGps = () => {
+    setMedia(m => [...m, { id: Date.now() + Math.random(), kind: 'gps', name: `pin_${Date.now().toString().slice(-4)}.loc` }]);
+  };
+
+  const removeMedia = async (m) => {
+    setMedia(prev => prev.filter(x => x.id !== m.id));
+    if (m.path) { try { await deleteMedia(m.path); } catch {} }
+  };
+
+  const FileBtn = ({ icon, label, accept, capture }) => (
+    <label className="flex-1 bg-white rounded-2xl py-4 flex flex-col items-center justify-center gap-1 shadow-soft text-xs text-black/70 cursor-pointer text-center px-2">
+      <span style={{ color: BRAND }}>{icon}</span>
+      {label}
+      <input
+        type="file"
+        accept={accept}
+        {...(capture ? { capture } : {})}
+        multiple={!capture}
+        onChange={(e) => { onFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
+        className="hidden"
+      />
+    </label>
+  );
+
   const btn = (kind) => {
-    const map = {
-      photo: { icon: <IconCam />, label: 'Take a photo' },
-      upload: { icon: <IconUpload />, label: category.key === 'inspo' ? 'Upload a screenshot or photo' : 'Upload things' },
-      gps: { icon: <IconPin />, label: 'Set GPS Location' },
-    };
-    const m = map[kind];
-    return (
-      <button key={kind} onClick={() => addMedia(kind)}
+    if (kind === 'photo') return <FileBtn key={kind} icon={<IconCam />} label="Take a photo" accept="image/*,video/*" capture="environment" />;
+    if (kind === 'upload') return <FileBtn key={kind} icon={<IconUpload />} label={category.key === 'inspo' ? 'Upload a screenshot or photo' : 'Upload things'} accept="image/*,video/*" />;
+    if (kind === 'gps') return (
+      <button key={kind} onClick={addGps}
         className="flex-1 bg-white rounded-2xl py-4 flex flex-col items-center justify-center gap-1 shadow-soft text-xs text-black/70">
-        <span style={{ color: BRAND }}>{m.icon}</span>
-        {m.label}
+        <span style={{ color: BRAND }}><IconPin /></span>
+        Set GPS Location
       </button>
     );
+    return null;
   };
 
   return (
@@ -644,13 +747,20 @@ function AddForm({ close, back, category, onSave, saving }) {
           placeholder={category.key === 'note' ? 'note here' : 'text field'}
           className="w-full h-48 rounded-2xl bg-white p-4 shadow-soft text-[15px] resize-none outline-none focus:ring-2 focus:ring-black/10"
         />
+        {uploading && <div className="text-xs text-black/50">Uploading…</div>}
         {media.length > 0 && (
           <div className="flex gap-2 overflow-x-auto no-scrollbar">
             {media.map(m => (
-              <div key={m.id} className="shrink-0 bg-white rounded-xl px-3 py-2 flex items-center gap-2 shadow-soft text-xs">
-                <div className="w-8 h-8 rounded-md" style={{ background: m.kind === 'gps' ? '#E7D4F0' : '#C8E5D8' }} />
-                <span>{m.name}</span>
-                <button onClick={() => setMedia(media.filter(x => x.id !== m.id))} className="text-black/40"><IconX /></button>
+              <div key={m.id} className="shrink-0 bg-white rounded-xl pr-3 py-2 pl-2 flex items-center gap-2 shadow-soft text-xs">
+                {m.url && m.kind === 'photo' ? (
+                  <img src={m.url} alt="" className="w-8 h-8 rounded-md object-cover" />
+                ) : m.url && m.kind === 'video' ? (
+                  <video src={m.url} className="w-8 h-8 rounded-md object-cover" muted />
+                ) : (
+                  <div className="w-8 h-8 rounded-md" style={{ background: m.kind === 'gps' ? '#E7D4F0' : '#C8E5D8' }} />
+                )}
+                <span className="max-w-[120px] truncate">{m.name}</span>
+                <button onClick={() => removeMedia(m)} className="text-black/40"><IconX /></button>
               </div>
             ))}
           </div>
@@ -658,7 +768,7 @@ function AddForm({ close, back, category, onSave, saving }) {
       </div>
       <ActionBar>
         {back && <button onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Back</button>}
-        <button disabled={saving} onClick={() => onSave({ text, media, category: category.key })}
+        <button disabled={saving || uploading} onClick={() => onSave({ text, media, category: category.key })}
           className="flex-1 py-3 rounded-full text-white font-medium disabled:opacity-60" style={{ background: BRAND }}>
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -831,7 +941,7 @@ export default function App() {
               <InspoDetail back={() => setOpenInspoId(null)} item={currentInspo} onEdit={() => setScreen('editinspo')} />
             )}
             {screen === 'editinspo' && currentInspo && (
-              <InspoForm back={() => setScreen('inspo')} onSave={handleSaveInspo} saving={saving} initial={currentInspo} />
+              <InspoForm back={() => setScreen('inspo')} onSave={handleSaveInspo} saving={saving} initial={currentInspo} userId={session.user.id} />
             )}
             {screen === 'add' && addStep === 'pick' && (
               <AddPicker close={() => setScreen('home')} pick={(c) => setAddStep(c)} />
@@ -843,6 +953,7 @@ export default function App() {
                 back={addDirect ? null : () => setAddStep('pick')}
                 onSave={handleSave}
                 saving={saving}
+                userId={session.user.id}
               />
             )}
           </>

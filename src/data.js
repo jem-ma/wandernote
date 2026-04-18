@@ -1,5 +1,29 @@
 import { supabase } from './supabase';
 
+// ---------- media uploads ----------
+export async function uploadMedia(userId, file) {
+  const ext = (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabase.storage
+    .from('media')
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from('media').getPublicUrl(path);
+  return {
+    id: path,
+    kind: file.type.startsWith('video') ? 'video' : 'photo',
+    name: file.name,
+    url: data.publicUrl,
+    path,
+    contentType: file.type,
+  };
+}
+
+export async function deleteMedia(path) {
+  if (!path) return;
+  await supabase.storage.from('media').remove([path]);
+}
+
 // ---------- trips ----------
 export async function getActiveTrip() {
   const { data, error } = await supabase

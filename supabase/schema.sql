@@ -69,3 +69,27 @@ create policy "entries: owner full access" on entries
 drop policy if exists "inspiration: owner full access" on inspiration;
 create policy "inspiration: owner full access" on inspiration
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- =============== STORAGE ===============
+-- Public "media" bucket for uploaded photos/videos.
+insert into storage.buckets (id, name, public)
+values ('media', 'media', true)
+on conflict (id) do nothing;
+
+drop policy if exists "media: public read" on storage.objects;
+create policy "media: public read" on storage.objects
+  for select using (bucket_id = 'media');
+
+drop policy if exists "media: owner insert" on storage.objects;
+create policy "media: owner insert" on storage.objects
+  for insert with check (
+    bucket_id = 'media'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "media: owner delete" on storage.objects;
+create policy "media: owner delete" on storage.objects
+  for delete using (
+    bucket_id = 'media'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
