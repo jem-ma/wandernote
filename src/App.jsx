@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './App.css';
 import { supabase } from './supabase';
 import Login from './Login';
+import PlaceInput from './PlaceInput';
 import {
   getActiveTrip,
   createTrip,
@@ -146,9 +147,17 @@ function Home({ go, onSignOut, hasTrip }) {
 function TripForm({ back, onSave, initial, saving }) {
   const today = new Date().toISOString().slice(0,10);
   const [name, setName] = useState(initial?.name || '');
-  const [startPoint, setStartPoint] = useState(initial?.start_point || 'home');
+  const [start, setStart] = useState({
+    name: initial?.start_point || 'home',
+    lat: initial?.start_lat ?? null,
+    lng: initial?.start_lng ?? null,
+  });
   const [startDate, setStartDate] = useState(initial?.start_date || today);
-  const [endPoint, setEndPoint] = useState(initial?.end_point || '');
+  const [end, setEnd] = useState({
+    name: initial?.end_point || '',
+    lat: initial?.end_lat ?? null,
+    lng: initial?.end_lng ?? null,
+  });
   const [endUnknown, setEndUnknown] = useState(initial ? (initial.end_point == null) : false);
   const [endDate, setEndDate] = useState(initial?.end_date || '');
 
@@ -159,9 +168,13 @@ function TripForm({ back, onSave, initial, saving }) {
     if (!name.trim()) return;
     onSave({
       name: name.trim(),
-      start_point: startPoint.trim() || 'home',
+      start_point: (start.name || '').trim() || 'home',
+      start_lat: start.lat,
+      start_lng: start.lng,
       start_date: startDate,
-      end_point: endUnknown ? null : (endPoint.trim() || null),
+      end_point: endUnknown ? null : ((end.name || '').trim() || null),
+      end_lat: endUnknown ? null : end.lat,
+      end_lng: endUnknown ? null : end.lng,
       end_date: endDate || null,
     });
   };
@@ -179,7 +192,7 @@ function TripForm({ back, onSave, initial, saving }) {
         </div>
         <div>
           <label className={label}>Start point</label>
-          <input className={field} value={startPoint} onChange={(e) => setStartPoint(e.target.value)} />
+          <PlaceInput className={field} value={start} onChange={setStart} placeholder="home" />
         </div>
         <div>
           <label className={label}>Start date</label>
@@ -187,10 +200,10 @@ function TripForm({ back, onSave, initial, saving }) {
         </div>
         <div>
           <label className={label}>End point</label>
-          <input
+          <PlaceInput
             className={field}
-            value={endUnknown ? '' : endPoint}
-            onChange={(e) => setEndPoint(e.target.value)}
+            value={endUnknown ? { name: '', lat: null, lng: null } : end}
+            onChange={setEnd}
             disabled={endUnknown}
             placeholder={endUnknown ? 'Not sure yet' : 'Where to?'}
           />

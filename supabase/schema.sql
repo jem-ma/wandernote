@@ -41,6 +41,10 @@ alter table trips add column if not exists start_point text default 'home';
 alter table trips add column if not exists start_date date default current_date;
 alter table trips add column if not exists end_point text;
 alter table trips add column if not exists end_date date;
+alter table trips add column if not exists start_lat double precision;
+alter table trips add column if not exists start_lng double precision;
+alter table trips add column if not exists end_lat double precision;
+alter table trips add column if not exists end_lng double precision;
 
 create index if not exists entries_user_trip_idx on entries(user_id, trip_id, created_at desc);
 create index if not exists inspiration_user_idx on inspiration(user_id, created_at desc);

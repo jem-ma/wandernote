@@ -24,6 +24,10 @@ export async function createTrip(userId, fields) {
       start_date: fields.start_date || new Date().toISOString().slice(0,10),
       end_point: fields.end_point || null,
       end_date: fields.end_date || null,
+      start_lat: fields.start_lat ?? null,
+      start_lng: fields.start_lng ?? null,
+      end_lat: fields.end_lat ?? null,
+      end_lng: fields.end_lng ?? null,
     })
     .select()
     .single();
@@ -40,6 +44,10 @@ export async function updateTrip(id, fields) {
       start_date: fields.start_date,
       end_point: fields.end_point,
       end_date: fields.end_date,
+      start_lat: fields.start_lat ?? null,
+      start_lng: fields.start_lng ?? null,
+      end_lat: fields.end_lat ?? null,
+      end_lng: fields.end_lng ?? null,
     })
     .eq('id', id)
     .select()
