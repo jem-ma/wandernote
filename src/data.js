@@ -124,6 +124,15 @@ export async function updateEntry(id, fields) {
   return data;
 }
 
+export async function deleteEntry(id, media = []) {
+  const paths = (media || []).map(m => m.path).filter(Boolean);
+  if (paths.length) {
+    try { await supabase.storage.from('media').remove(paths); } catch {}
+  }
+  const { error } = await supabase.from('entries').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function endTrip(id) {
   const { error } = await supabase
     .from('trips')

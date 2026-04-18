@@ -17,6 +17,7 @@ import {
   uploadMedia,
   deleteMedia,
   updateEntry,
+  deleteEntry,
   endTrip,
   getPastTrips,
 } from './data';
@@ -359,7 +360,7 @@ function EntryDetail({ back, entry, onEdit, readonly }) {
   );
 }
 
-function EntryForm({ back, onSave, initial, saving, userId }) {
+function EntryForm({ back, onSave, onDelete, initial, saving, userId }) {
   const [title, setTitle] = useState(initial?.title || '');
   const [body, setBody] = useState(initial?.text || '');
   const [media, setMedia] = useState(initial?.media || []);
@@ -420,6 +421,15 @@ function EntryForm({ back, onSave, initial, saving, userId }) {
             </div>
           )}
         </div>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={() => { if (confirm('Delete this entry? This cannot be undone.')) onDelete(); }}
+            className="w-full py-3 rounded-full border border-red-200 bg-white text-red-500 font-medium mt-4"
+          >
+            Delete entry
+          </button>
+        )}
       </form>
       <ActionBar>
         <button type="button" onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Cancel</button>
@@ -1042,6 +1052,17 @@ export default function App() {
     } finally { setSaving(false); }
   };
 
+  const handleDeleteEntry = async () => {
+    if (!openEntryId) return;
+    const current = entries.find(e => e.id === openEntryId);
+    try {
+      await deleteEntry(openEntryId, current?.media || []);
+      setEntries(prev => prev.filter(e => e.id !== openEntryId));
+      setOpenEntryId(null);
+      setScreen('trip');
+    } catch (e) { alert('Delete failed: ' + e.message); }
+  };
+
   const handleEndTrip = async () => {
     if (!trip) return;
     try {
@@ -1114,7 +1135,7 @@ export default function App() {
               <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} onEdit={() => setScreen('editentry')} />
             )}
             {screen === 'editentry' && currentEntry && (
-              <EntryForm back={() => setScreen('trip')} onSave={handleSaveEntry} saving={saving} initial={currentEntry} userId={session.user.id} />
+              <EntryForm back={() => setScreen('trip')} onSave={handleSaveEntry} onDelete={handleDeleteEntry} saving={saving} initial={currentEntry} userId={session.user.id} />
             )}
             {screen === 'pasttrips' && (
               <PastTrips back={() => setScreen('home')} trips={pastTrips} openTrip={openPastTrip} />
