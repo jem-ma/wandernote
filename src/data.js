@@ -113,6 +113,22 @@ export async function createInspiration(userId, { title, note, link, media, colo
   return data;
 }
 
+export async function updateInspiration(id, fields) {
+  const { data, error } = await supabase
+    .from('inspiration')
+    .update({
+      title: fields.title,
+      note: fields.note,
+      link: fields.link || null,
+      media: fields.media || [],
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 // ---------- seed inspiration on first login ----------
 export async function seedInspirationIfEmpty(userId) {
   const { count } = await supabase
