@@ -310,13 +310,11 @@ function TripScreen({ back, trip, entries, openEntry, onEdit, onAddJournal, read
               ))}
             </div>
           ) : (
-            <div className="px-5 space-y-10">
+            <div className="px-5 space-y-6">
               {[...entries].reverse().map((e) => {
                 const mediaWithUrls = (e.media || []).filter(m => m.url);
                 return (
                   <div key={e.id} className="space-y-3">
-                    <div className="text-xs uppercase tracking-wider text-black/40">{e.day}</div>
-                    <h2 className="text-lg font-semibold">{e.title}</h2>
                     {e.text && <p className="text-[15px] leading-relaxed text-black/70 whitespace-pre-wrap">{e.text}</p>}
                     {mediaWithUrls.map(m => (
                       <Photo key={m.id} h={240} src={m.url} kind={m.kind} />
