@@ -310,23 +310,20 @@ function TripScreen({ back, trip, entries, openEntry, onEdit, onAddJournal, read
               ))}
             </div>
           ) : (
-            <div className="px-5 space-y-8">
-              {entries.map((e, i) => (
-                <div key={e.id} className="space-y-3">
-                  <div className="text-xs uppercase tracking-wider text-black/40">{e.day}</div>
-                  <h2 className="text-lg font-semibold">{e.title}</h2>
-                  <p className="text-[15px] leading-relaxed text-black/70">{e.text}</p>
-                  {i % 2 === 0 ? (
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="col-span-2 row-span-2"><Photo color={e.color} h={200} /></div>
-                      <Photo color="#E8DFD0" h={96} />
-                      <Photo color="#C8D8C0" h={96} />
-                    </div>
-                  ) : (
-                    <Photo color={e.color} h={180} />
-                  )}
-                </div>
-              ))}
+            <div className="px-5 space-y-10">
+              {[...entries].reverse().map((e) => {
+                const mediaWithUrls = (e.media || []).filter(m => m.url);
+                return (
+                  <div key={e.id} className="space-y-3">
+                    <div className="text-xs uppercase tracking-wider text-black/40">{e.day}</div>
+                    <h2 className="text-lg font-semibold">{e.title}</h2>
+                    {e.text && <p className="text-[15px] leading-relaxed text-black/70 whitespace-pre-wrap">{e.text}</p>}
+                    {mediaWithUrls.map(m => (
+                      <Photo key={m.id} h={240} src={m.url} kind={m.kind} />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
