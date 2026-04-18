@@ -109,6 +109,39 @@ export async function createEntry(userId, tripId, { kind, title, body, media, co
   return data;
 }
 
+export async function updateEntry(id, fields) {
+  const { data, error } = await supabase
+    .from('entries')
+    .update({
+      title: fields.title,
+      body: fields.body,
+      media: fields.media || [],
+    })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function endTrip(id) {
+  const { error } = await supabase
+    .from('trips')
+    .update({ status: 'past' })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+export async function getPastTrips() {
+  const { data, error } = await supabase
+    .from('trips')
+    .select('*')
+    .eq('status', 'past')
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
 // ---------- inspiration ----------
 export async function getInspiration() {
   const { data, error } = await supabase

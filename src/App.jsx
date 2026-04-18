@@ -16,6 +16,9 @@ import {
   dayLabel,
   uploadMedia,
   deleteMedia,
+  updateEntry,
+  endTrip,
+  getPastTrips,
 } from './data';
 
 const BRAND = '#5DD9C1';
@@ -147,7 +150,7 @@ function Home({ go, onSignOut, hasTrip }) {
         {hasTrip
           ? <Tile label="active trip!" onClick={() => go('trip')} />
           : <Tile label="begin a new trip" accent onClick={() => go('newtrip')} />}
-        <Tile label="past trips" onClick={() => {}} />
+        <Tile label="past trips" onClick={() => go('pasttrips')} />
         <Tile label="my inspiration" onClick={() => go('inspo')} />
         <Tile label="add something" accent onClick={() => go('add')} />
       </div>
@@ -156,7 +159,7 @@ function Home({ go, onSignOut, hasTrip }) {
 }
 
 // ---------- TripForm (new / edit) ----------
-function TripForm({ back, onSave, initial, saving }) {
+function TripForm({ back, onSave, initial, saving, onEndTrip }) {
   const today = new Date().toISOString().slice(0,10);
   const [name, setName] = useState(initial?.name || '');
   const [start, setStart] = useState({
@@ -223,6 +226,15 @@ function TripForm({ back, onSave, initial, saving }) {
         <div><label className={lbl}>End date</label>
           <input type="date" className={field} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
+        {isEdit && onEndTrip && (
+          <button
+            type="button"
+            onClick={() => { if (confirm('End this trip? It will move to Past trips.')) onEndTrip(); }}
+            className="w-full py-3 rounded-full border border-red-200 bg-white text-red-500 font-medium mt-4"
+          >
+            End trip
+          </button>
+        )}
       </form>
       <ActionBar>
         <button type="button" onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Cancel</button>
@@ -235,31 +247,34 @@ function TripForm({ back, onSave, initial, saving }) {
 }
 
 // ---------- Trip / Entries ----------
-function TripScreen({ back, entries, openEntry, onEdit, onAddJournal }) {
+function TripScreen({ back, trip, entries, openEntry, onEdit, onAddJournal, readonly }) {
   const [tab, setTab] = useState('overview');
   const days = Array.from(new Set(entries.map(e => e.day)));
   const empty = entries.length === 0;
+  const title = trip?.name || (readonly ? 'past trip' : 'active trip');
   return (
     <div className="pb-28">
       <Header
-        title="active trip"
+        title={title}
         back={back}
-        right={
+        right={!readonly ? (
           <button onClick={onEdit} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center" aria-label="Edit trip">
             <IconEdit />
           </button>
-        }
+        ) : null}
       />
       {empty ? (
         <div className="px-5 pt-12 flex flex-col items-center gap-5 text-center">
-          <div className="text-sm text-black/50 max-w-[260px]">No entries yet. Start your story.</div>
-          <button
-            onClick={onAddJournal}
-            className="w-full py-4 rounded-full text-white font-medium text-lg flex items-center justify-center gap-2 shadow-soft"
-            style={{ background: BRAND }}
-          >
-            <IconPlus /> Add a journal entry
-          </button>
+          <div className="text-sm text-black/50 max-w-[260px]">{readonly ? 'No entries were added to this trip.' : 'No entries yet. Start your story.'}</div>
+          {!readonly && (
+            <button
+              onClick={onAddJournal}
+              className="w-full py-4 rounded-full text-white font-medium text-lg flex items-center justify-center gap-2 shadow-soft"
+              style={{ background: BRAND }}
+            >
+              <IconPlus /> Add a journal entry
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -319,22 +334,128 @@ function TripScreen({ back, entries, openEntry, onEdit, onAddJournal }) {
   );
 }
 
-function EntryDetail({ back, entry }) {
+function EntryDetail({ back, entry, onEdit, readonly }) {
   return (
     <div className="pb-28">
       <Header
-        title="active trip"
+        title={entry.day}
         back={back}
-        right={<span className="px-3 py-1 rounded-full text-xs font-medium" style={{ background: '#FFE0DA', color: '#C9503F' }}>ability to edit</span>}
+        right={!readonly ? (
+          <button onClick={onEdit} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center" aria-label="Edit entry">
+            <IconEdit />
+          </button>
+        ) : null}
       />
       <div className="px-5 space-y-4">
-        <div className="text-xs uppercase tracking-wider text-black/40">{entry.day}</div>
         <h2 className="text-xl font-semibold">{entry.title}</h2>
         <div className="bg-white rounded-2xl p-4 shadow-soft text-[15px] leading-relaxed text-black/75">
           {entry.text}
         </div>
         {(entry.media || []).filter(m => m.url).map(m => (
           <Photo key={m.id} h={240} src={m.url} kind={m.kind} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EntryForm({ back, onSave, initial, saving, userId }) {
+  const [title, setTitle] = useState(initial?.title || '');
+  const [body, setBody] = useState(initial?.text || '');
+  const [media, setMedia] = useState(initial?.media || []);
+  const [uploading, setUploading] = useState(false);
+
+  const onFiles = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of files) uploaded.push(await uploadMedia(userId, f));
+      setMedia(prev => [...prev, ...uploaded]);
+    } catch (e) { alert('Upload failed: ' + e.message); }
+    finally { setUploading(false); }
+  };
+  const removeMedia = async (m) => {
+    setMedia(prev => prev.filter(x => x.id !== m.id));
+    if (m.path) { try { await deleteMedia(m.path); } catch {} }
+  };
+
+  const submit = (e) => {
+    e?.preventDefault();
+    onSave({ title: title.trim() || 'Untitled', body: body.trim(), media });
+  };
+
+  const field = "w-full rounded-2xl bg-white px-4 py-3 shadow-soft outline-none focus:ring-2 focus:ring-black/10 text-[15px]";
+  const lbl = "text-xs uppercase tracking-wider text-black/50 mb-1 block";
+
+  return (
+    <div className="pb-28">
+      <Header title="edit entry" back={back} />
+      <form onSubmit={submit} className="px-5 space-y-4">
+        <div><label className={lbl}>Title</label>
+          <input className={field} value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div><label className={lbl}>Notes</label>
+          <textarea className={`${field} h-40 resize-none`} value={body} onChange={(e) => setBody(e.target.value)} />
+        </div>
+        <div><label className={lbl}>Media</label>
+          <label className="w-full bg-white rounded-2xl py-4 flex items-center justify-center gap-2 shadow-soft text-sm text-black/70 cursor-pointer">
+            <span style={{ color: BRAND }}><IconUpload /></span>
+            {uploading ? 'Uploading…' : 'Upload images or videos'}
+            <input type="file" accept="image/*,video/*" multiple
+              onChange={(e) => { onFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
+              className="hidden" />
+          </label>
+          {media.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto no-scrollbar mt-2">
+              {media.map(m => (
+                <div key={m.id} className="shrink-0 bg-white rounded-xl pr-3 py-2 pl-2 flex items-center gap-2 shadow-soft text-xs">
+                  {m.url && m.kind === 'photo' ? <img src={m.url} className="w-8 h-8 rounded-md object-cover" alt="" /> :
+                   m.url && m.kind === 'video' ? <video src={m.url} className="w-8 h-8 rounded-md object-cover" muted /> :
+                   <div className="w-8 h-8 rounded-md bg-black/10" />}
+                  <span className="max-w-[120px] truncate">{m.name}</span>
+                  <button type="button" onClick={() => removeMedia(m)} className="text-black/40"><IconX /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </form>
+      <ActionBar>
+        <button type="button" onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Cancel</button>
+        <button type="button" onClick={submit} disabled={saving || uploading} className="flex-1 py-3 rounded-full text-white font-medium disabled:opacity-60" style={{ background: BRAND }}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </ActionBar>
+    </div>
+  );
+}
+
+// ---------- Past trips ----------
+function PastTrips({ back, trips, openTrip }) {
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  return (
+    <div className="pb-28">
+      <Header title="past trips" back={back} />
+      <div className="px-5 space-y-3">
+        {trips.length === 0 ? (
+          <div className="text-sm text-black/50 pt-6">No past trips yet.</div>
+        ) : trips.map(t => (
+          <button
+            key={t.id}
+            onClick={() => openTrip(t)}
+            className="w-full bg-white rounded-2xl p-4 text-left shadow-soft active:scale-[0.99] transition"
+          >
+            <div className="font-medium">{t.name}</div>
+            <div className="text-xs text-black/50 mt-1">
+              {fmt(t.start_date)}{t.end_date ? ` – ${fmt(t.end_date)}` : ''}
+            </div>
+            {(t.start_point || t.end_point) && (
+              <div className="text-xs text-black/40 mt-1">
+                {t.start_point || 'home'}{t.end_point ? ` → ${t.end_point}` : ''}
+              </div>
+            )}
+          </button>
         ))}
       </div>
     </div>
@@ -693,8 +814,20 @@ function AddForm({ close, back, category, onSave, saving, userId }) {
     }
   };
 
+  const [locating, setLocating] = useState(false);
   const addGps = () => {
-    setMedia(m => [...m, { id: Date.now() + Math.random(), kind: 'gps', name: `pin_${Date.now().toString().slice(-4)}.loc` }]);
+    if (!navigator.geolocation) { alert('Geolocation not supported'); return; }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        const name = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+        setMedia(m => [...m, { id: Date.now() + Math.random(), kind: 'gps', name, lat: latitude, lng: longitude }]);
+        setLocating(false);
+      },
+      (err) => { alert('Location error: ' + err.message); setLocating(false); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const removeMedia = async (m) => {
@@ -721,10 +854,10 @@ function AddForm({ close, back, category, onSave, saving, userId }) {
     if (kind === 'photo') return <FileBtn key={kind} icon={<IconCam />} label="Take a photo" accept="image/*,video/*" capture="environment" />;
     if (kind === 'upload') return <FileBtn key={kind} icon={<IconUpload />} label={category.key === 'inspo' ? 'Upload a screenshot or photo' : 'Upload things'} accept="image/*,video/*" />;
     if (kind === 'gps') return (
-      <button key={kind} onClick={addGps}
-        className="flex-1 bg-white rounded-2xl py-4 flex flex-col items-center justify-center gap-1 shadow-soft text-xs text-black/70">
+      <button key={kind} onClick={addGps} disabled={locating}
+        className="flex-1 bg-white rounded-2xl py-4 flex flex-col items-center justify-center gap-1 shadow-soft text-xs text-black/70 disabled:opacity-60">
         <span style={{ color: BRAND }}><IconPin /></span>
-        Set GPS Location
+        {locating ? 'Locating…' : 'Set GPS Location'}
       </button>
     );
     return null;
@@ -786,12 +919,15 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [inspo, setInspo] = useState([]);
 
-  const [screen, setScreen] = useState('home'); // home | trip | inspo | newtrip | edittrip | add | editinspo
-  const [addStep, setAddStep] = useState(null); // null | 'pick' | category obj
-  const [addDirect, setAddDirect] = useState(false); // true = skip picker (no back button)
+  const [screen, setScreen] = useState('home');
+  const [addStep, setAddStep] = useState(null);
+  const [addDirect, setAddDirect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openEntryId, setOpenEntryId] = useState(null);
   const [openInspoId, setOpenInspoId] = useState(null);
+  const [pastTrips, setPastTrips] = useState([]);
+  const [viewedTrip, setViewedTrip] = useState(null);
+  const [viewedEntries, setViewedEntries] = useState([]);
 
   // auth bootstrap
   useEffect(() => {
@@ -839,6 +975,7 @@ export default function App() {
 
   const go = (s) => {
     if (s === 'add') return openAdd();
+    if (s === 'pasttrips') return openPastTrips();
     if (s === 'trip' && !trip) { setScreen('newtrip'); return; }
     if (s === 'inspo') setOpenInspoId(null);
     if (s === 'trip') setOpenEntryId(null);
@@ -893,6 +1030,45 @@ export default function App() {
     } finally { setSaving(false); }
   };
 
+  const handleSaveEntry = async (fields) => {
+    if (!openEntryId) return;
+    setSaving(true);
+    try {
+      const row = await updateEntry(openEntryId, fields);
+      setEntries(prev => prev.map(e => e.id === row.id ? toEntry(row) : e));
+      setScreen('trip');
+    } catch (e) {
+      console.error(e); alert('Save failed: ' + e.message);
+    } finally { setSaving(false); }
+  };
+
+  const handleEndTrip = async () => {
+    if (!trip) return;
+    try {
+      await endTrip(trip.id);
+      setTrip(null);
+      setEntries([]);
+      setScreen('home');
+    } catch (e) { alert('Could not end trip: ' + e.message); }
+  };
+
+  const openPastTrips = async () => {
+    try {
+      const list = await getPastTrips();
+      setPastTrips(list);
+      setScreen('pasttrips');
+    } catch (e) { alert('Could not load past trips: ' + e.message); }
+  };
+
+  const openPastTrip = async (t) => {
+    try {
+      const es = await getEntriesForTrip(t.id);
+      setViewedTrip(t);
+      setViewedEntries(es.map(toEntry));
+      setScreen('viewtrip');
+    } catch (e) { alert('Could not load trip: ' + e.message); }
+  };
+
   const handleSaveInspo = async (fields) => {
     if (!openInspoId) return;
     setSaving(true);
@@ -912,7 +1088,7 @@ export default function App() {
   if (!session) return <Login />;
 
   const journalCategory = CATEGORIES.find(c => c.key === 'journal');
-  const hideNav = screen === 'newtrip' || screen === 'edittrip' || screen === 'add' || screen === 'editinspo';
+  const hideNav = ['newtrip','edittrip','add','editinspo','editentry'].includes(screen);
 
   return (
     <div className="min-h-full flex justify-center" style={{ background: '#EEE9E1' }}>
@@ -923,17 +1099,35 @@ export default function App() {
           <>
             {screen === 'home' && <Home go={go} onSignOut={handleSignOut} hasTrip={!!trip} />}
             {screen === 'newtrip' && <TripForm back={() => setScreen('home')} onSave={handleSaveTrip} saving={saving} />}
-            {screen === 'edittrip' && <TripForm back={() => setScreen('trip')} onSave={handleSaveTrip} saving={saving} initial={trip} />}
+            {screen === 'edittrip' && <TripForm back={() => setScreen('trip')} onSave={handleSaveTrip} saving={saving} initial={trip} onEndTrip={handleEndTrip} />}
             {screen === 'trip' && !currentEntry && (
               <TripScreen
                 back={() => setScreen('home')}
+                trip={trip}
                 entries={entries}
                 openEntry={setOpenEntryId}
                 onEdit={() => setScreen('edittrip')}
                 onAddJournal={() => openAdd(journalCategory)}
               />
             )}
-            {screen === 'trip' && currentEntry && <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} />}
+            {screen === 'trip' && currentEntry && (
+              <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} onEdit={() => setScreen('editentry')} />
+            )}
+            {screen === 'editentry' && currentEntry && (
+              <EntryForm back={() => setScreen('trip')} onSave={handleSaveEntry} saving={saving} initial={currentEntry} userId={session.user.id} />
+            )}
+            {screen === 'pasttrips' && (
+              <PastTrips back={() => setScreen('home')} trips={pastTrips} openTrip={openPastTrip} />
+            )}
+            {screen === 'viewtrip' && viewedTrip && (
+              <TripScreen
+                back={() => { setViewedTrip(null); setViewedEntries([]); setScreen('pasttrips'); }}
+                trip={viewedTrip}
+                entries={viewedEntries}
+                openEntry={() => {}}
+                readonly
+              />
+            )}
             {screen === 'inspo' && !currentInspo && (
               <Inspiration back={() => setScreen('home')} items={inspo} openItem={setOpenInspoId} />
             )}
