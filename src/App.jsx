@@ -1,28 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './App.css';
+import { supabase } from './supabase';
+import Login from './Login';
+import {
+  ensureActiveTrip,
+  getEntriesForTrip,
+  getInspiration,
+  createEntry,
+  createInspiration,
+  seedIfEmpty,
+  dayLabel,
+} from './data';
 
 const BRAND = '#5DD9C1';
-
-// ---------- sample data ----------
-const todayLabel = 'Today · 18 Apr';
-const yesterdayLabel = 'Yesterday · 17 Apr';
-const mondayLabel = 'Monday · 14 Apr';
-
-const initialEntries = [
-  { id: 'e1', day: todayLabel, title: 'Morning coffee in Tintagel', text: 'Rolled into Tintagel at sunrise. Parked the van near the cliffs and had a flat white from a tiny hatch café. Waves crashing below, gulls everywhere.', color: '#F5C6B3' },
-  { id: 'e2', day: todayLabel, title: 'Cliff walk to the castle', text: 'Walked the coast path to the castle ruins. Wind almost knocked me over but the views were unreal.', color: '#C8E5D8' },
-  { id: 'e3', day: todayLabel, title: 'Fish & chips on the harbour', text: 'Chippy in Boscastle. Ate sat on the harbour wall with a cold cider.', color: '#E7D4F0' },
-  { id: 'e4', day: yesterdayLabel, title: 'Wild swim at Crackington', text: 'Cold, gasping, glorious. Stayed in the water about 4 minutes.', color: '#B7D9E8' },
-  { id: 'e5', day: yesterdayLabel, title: 'Farm shop find', text: 'Tiny honesty-box farm shop. Bought eggs, cheese, and a sourdough for the van.', color: '#F3DFA2' },
-  { id: 'e6', day: mondayLabel, title: 'Dartmoor overnight', text: 'Pulled off on a quiet lane on the moor. Stars were wild.', color: '#D5CDE8' },
-];
-
-const initialInspo = [
-  { id: 'i1', title: 'Coastal walk near St Ives', note: 'Carbis Bay → St Ives via the coast path. Apparently the best stretch in Cornwall.', link: 'https://example.com', color: '#B8E0D2', h: 180 },
-  { id: 'i2', title: 'Tiny café in Hay-on-Wye', note: 'Book-lined café above the second-hand bookshop. Cardamom buns.', link: 'https://example.com', color: '#F6CBA5', h: 220 },
-  { id: 'i3', title: 'Wild swim spot — Dartmoor', note: 'Sharrah Pool on the Dart. 30 min walk in from Newbridge.', link: 'https://example.com', color: '#A9D4E8', h: 200 },
-  { id: 'i4', title: 'Bakery in Bruton', note: 'At The Chapel. Weekend queue out the door.', link: 'https://example.com', color: '#E8C9D9', h: 160 },
-];
 
 // ---------- small UI atoms ----------
 const Photo = ({ color = '#D6D2CA', h = 120, label }) => (
@@ -92,8 +82,25 @@ const IconMap = (p) => (
   </svg>
 );
 
+// ---------- row → UI mappers ----------
+const toEntry = (r) => ({
+  id: r.id,
+  day: dayLabel(r.created_at),
+  title: r.title || 'Untitled',
+  text: r.body || '',
+  color: r.color || '#D5CDE8',
+});
+const toInspo = (r) => ({
+  id: r.id,
+  title: r.title || 'Untitled',
+  note: r.note || '',
+  link: r.link || '#',
+  color: r.color || '#C8E5D8',
+  h: r.height || 180,
+});
+
 // ---------- screens ----------
-function Home({ go }) {
+function Home({ go, onSignOut, email }) {
   const Tile = ({ label, accent, onClick }) => (
     <button
       onClick={onClick}
@@ -109,9 +116,12 @@ function Home({ go }) {
   );
   return (
     <div className="px-5 pt-10 pb-28">
-      <div className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight">Wandernote</h1>
-        <p className="text-sm text-black/50 mt-1">Your travel memory companion</p>
+      <div className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">Wandernote</h1>
+          <p className="text-sm text-black/50 mt-1">Your travel memory companion</p>
+        </div>
+        <button onClick={onSignOut} className="text-xs text-black/40 mt-2 underline">Sign out</button>
       </div>
       <div className="space-y-4">
         <Tile label="active trip!" onClick={() => go('trip')} />
@@ -119,6 +129,7 @@ function Home({ go }) {
         <Tile label="my inspiration" onClick={() => go('inspo')} />
         <Tile label="add something" accent onClick={() => go('add')} />
       </div>
+      {email && <div className="text-[11px] text-black/30 text-center mt-6">Signed in as {email}</div>}
     </div>
   );
 }
@@ -133,6 +144,9 @@ function TripScreen({ back, entries, openEntry }) {
         <Pill active={tab === 'overview'} onClick={() => setTab('overview')}>Overview summary</Pill>
         <Pill active={tab === 'story'} onClick={() => setTab('story')}>Read the story</Pill>
       </div>
+      {entries.length === 0 && (
+        <div className="px-5 text-sm text-black/50">No entries yet. Tap + to add one.</div>
+      )}
       {tab === 'overview' ? (
         <div className="space-y-6">
           {days.map(day => (
@@ -202,28 +216,31 @@ function EntryDetail({ back, entry }) {
 }
 
 function Inspiration({ back, items, openItem }) {
-  // simple 2-col masonry via columns
   return (
     <div className="pb-28">
       <Header title="inspiration" back={back} />
       <div className="px-5 mb-4">
         <button className="px-4 py-2 rounded-full text-sm bg-black/5 text-black/50 border border-black/5">Set Filters</button>
       </div>
-      <div className="px-5 columns-2 gap-3 space-y-3">
-        {items.map(item => (
-          <button
-            key={item.id}
-            onClick={() => openItem(item.id)}
-            className="block w-full break-inside-avoid bg-white rounded-2xl shadow-soft overflow-hidden text-left mb-3"
-          >
-            <Photo color={item.color} h={item.h} />
-            <div className="p-3">
-              <div className="font-medium text-sm">{item.title}</div>
-              <div className="text-xs text-black/50 mt-1 line-clamp-3">{item.note}</div>
-            </div>
-          </button>
-        ))}
-      </div>
+      {items.length === 0 ? (
+        <div className="px-5 text-sm text-black/50">No inspiration saved yet.</div>
+      ) : (
+        <div className="px-5 columns-2 gap-3 space-y-3">
+          {items.map(item => (
+            <button
+              key={item.id}
+              onClick={() => openItem(item.id)}
+              className="block w-full break-inside-avoid bg-white rounded-2xl shadow-soft overflow-hidden text-left mb-3"
+            >
+              <Photo color={item.color} h={item.h} />
+              <div className="p-3">
+                <div className="font-medium text-sm">{item.title}</div>
+                <div className="text-xs text-black/50 mt-1 line-clamp-3">{item.note}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -293,7 +310,7 @@ function AddPicker({ close, pick }) {
   );
 }
 
-function AddForm({ close, back, category, onSave }) {
+function AddForm({ close, back, category, onSave, saving }) {
   const [text, setText] = useState('');
   const [media, setMedia] = useState([]);
 
@@ -355,11 +372,12 @@ function AddForm({ close, back, category, onSave }) {
         <div className="flex gap-3 pt-2">
           <button onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Back</button>
           <button
+            disabled={saving}
             onClick={() => onSave({ text, media, category: category.key })}
-            className="flex-1 py-3 rounded-full text-white font-medium"
+            className="flex-1 py-3 rounded-full text-white font-medium disabled:opacity-60"
             style={{ background: BRAND }}
           >
-            Save
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>
@@ -387,39 +405,120 @@ function Sheet({ close, title, leftLabel, centre, children }) {
 
 // ---------- shell ----------
 export default function App() {
-  const [screen, setScreen] = useState('home'); // home | trip | inspo | entry | inspoDetail
-  const [entries, setEntries] = useState(initialEntries);
-  const [inspo, setInspo] = useState(initialInspo);
-  const [addStep, setAddStep] = useState(null); // null | 'pick' | category obj
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [trip, setTrip] = useState(null);
+  const [entries, setEntries] = useState([]);
+  const [inspo, setInspo] = useState([]);
+
+  const [screen, setScreen] = useState('home');
+  const [addStep, setAddStep] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [openEntryId, setOpenEntryId] = useState(null);
   const [openInspoId, setOpenInspoId] = useState(null);
+
+  // auth bootstrap
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // load data when signed in
+  useEffect(() => {
+    if (!session) { setLoading(false); return; }
+    (async () => {
+      setLoading(true);
+      try {
+        const t = await seedIfEmpty(session.user.id);
+        setTrip(t);
+        const [es, is] = await Promise.all([
+          getEntriesForTrip(t.id),
+          getInspiration(),
+        ]);
+        setEntries(es.map(toEntry));
+        setInspo(is.map(toInspo));
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [session]);
 
   const go = (s) => {
     if (s === 'add') setAddStep('pick');
     else setScreen(s);
   };
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setEntries([]); setInspo([]); setTrip(null); setScreen('home');
+  };
+
+  const handleSave = async ({ text, media, category }) => {
+    if (!session) return;
+    setSaving(true);
+    try {
+      if (category === 'inspo') {
+        const row = await createInspiration(session.user.id, {
+          title: text.slice(0, 40) || 'New inspiration',
+          note: text,
+          link: 'https://example.com',
+          media,
+        });
+        setInspo(prev => [toInspo(row), ...prev]);
+      } else {
+        const row = await createEntry(session.user.id, trip.id, {
+          kind: category === 'tip' ? 'tip' : category === 'note' ? 'note' : 'journal',
+          title: text.slice(0, 40) || 'New entry',
+          body: text,
+          media,
+        });
+        setEntries(prev => [toEntry(row), ...prev]);
+      }
+      setAddStep(null);
+    } catch (e) {
+      console.error(e);
+      alert('Save failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const currentEntry = entries.find(e => e.id === openEntryId);
   const currentInspo = inspo.find(i => i.id === openInspoId);
+
+  if (!authReady) return null;
+  if (!session) return <Login />;
 
   return (
     <div className="min-h-full flex justify-center" style={{ background: '#EEE9E1' }}>
       <div className="relative w-full max-w-[390px] min-h-screen bg-[#F4EFE7]">
-        {screen === 'home' && <Home go={go} />}
-        {screen === 'trip' && !currentEntry && (
-          <TripScreen back={() => setScreen('home')} entries={entries} openEntry={(id) => { setOpenEntryId(id); }} />
-        )}
-        {screen === 'trip' && currentEntry && (
-          <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} />
-        )}
-        {screen === 'inspo' && !currentInspo && (
-          <Inspiration back={() => setScreen('home')} items={inspo} openItem={(id) => setOpenInspoId(id)} />
-        )}
-        {screen === 'inspo' && currentInspo && (
-          <InspoDetail back={() => setOpenInspoId(null)} item={currentInspo} />
+        {loading ? (
+          <div className="pt-24 text-center text-sm text-black/40">Loading your trip…</div>
+        ) : (
+          <>
+            {screen === 'home' && <Home go={go} onSignOut={handleSignOut} email={session.user.email} />}
+            {screen === 'trip' && !currentEntry && (
+              <TripScreen back={() => setScreen('home')} entries={entries} openEntry={setOpenEntryId} />
+            )}
+            {screen === 'trip' && currentEntry && (
+              <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} />
+            )}
+            {screen === 'inspo' && !currentInspo && (
+              <Inspiration back={() => setScreen('home')} items={inspo} openItem={setOpenInspoId} />
+            )}
+            {screen === 'inspo' && currentInspo && (
+              <InspoDetail back={() => setOpenInspoId(null)} item={currentInspo} />
+            )}
+          </>
         )}
 
-        {/* Add flow */}
         {addStep === 'pick' && (
           <AddPicker close={() => setAddStep(null)} pick={(c) => setAddStep(c)} />
         )}
@@ -428,31 +527,11 @@ export default function App() {
             category={addStep}
             close={() => setAddStep(null)}
             back={() => setAddStep('pick')}
-            onSave={(payload) => {
-              if (payload.category === 'inspo') {
-                setInspo(prev => [{
-                  id: 'i' + Date.now(),
-                  title: payload.text.slice(0, 40) || 'New inspiration',
-                  note: payload.text,
-                  link: 'https://example.com',
-                  color: '#C8E5D8',
-                  h: 180,
-                }, ...prev]);
-              } else {
-                setEntries(prev => [{
-                  id: 'e' + Date.now(),
-                  day: todayLabel,
-                  title: payload.text.slice(0, 40) || 'New entry',
-                  text: payload.text,
-                  color: '#D5CDE8',
-                }, ...prev]);
-              }
-              setAddStep(null);
-            }}
+            onSave={handleSave}
+            saving={saving}
           />
         )}
 
-        {/* Bottom nav */}
         <BottomNav
           screen={screen}
           onInspo={() => { setOpenInspoId(null); setScreen('inspo'); }}
@@ -472,8 +551,8 @@ function BottomNav({ screen, onInspo, onTrips, onAdd }) {
     </button>
   );
   return (
-    <div className="absolute bottom-0 left-0 right-0 flex justify-center pointer-events-none pb-3">
-      <div className="pointer-events-auto w-[94%] bg-white rounded-full shadow-soft flex items-center justify-between px-4 py-2 relative">
+    <div className="fixed bottom-0 left-0 right-0 flex justify-center pointer-events-none pb-3">
+      <div className="pointer-events-auto w-[94%] max-w-[370px] bg-white rounded-full shadow-soft flex items-center justify-between px-4 py-2 relative">
         <NavBtn label="Inspo" icon={<IconCompass />} active={screen === 'inspo'} onClick={onInspo} />
         <button
           onClick={onAdd}
