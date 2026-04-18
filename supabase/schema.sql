@@ -36,6 +36,12 @@ create table if not exists inspiration (
   created_at timestamptz not null default now()
 );
 
+-- trip detail columns (safe to re-run)
+alter table trips add column if not exists start_point text default 'home';
+alter table trips add column if not exists start_date date default current_date;
+alter table trips add column if not exists end_point text;
+alter table trips add column if not exists end_date date;
+
 create index if not exists entries_user_trip_idx on entries(user_id, trip_id, created_at desc);
 create index if not exists inspiration_user_idx on inspiration(user_id, created_at desc);
 create index if not exists trips_user_status_idx on trips(user_id, status);

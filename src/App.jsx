@@ -3,12 +3,14 @@ import './App.css';
 import { supabase } from './supabase';
 import Login from './Login';
 import {
-  ensureActiveTrip,
+  getActiveTrip,
+  createTrip,
+  updateTrip,
   getEntriesForTrip,
   getInspiration,
   createEntry,
   createInspiration,
-  seedIfEmpty,
+  seedInspirationIfEmpty,
   dayLabel,
 } from './data';
 
@@ -74,6 +76,12 @@ const IconCompass = (p) => (
     <polygon points="16.2 7.8 13.4 13.4 7.8 16.2 10.6 10.6 16.2 7.8" />
   </svg>
 );
+const IconEdit = (p) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
 const IconMap = (p) => (
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
     <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
@@ -100,7 +108,7 @@ const toInspo = (r) => ({
 });
 
 // ---------- screens ----------
-function Home({ go, onSignOut, email }) {
+function Home({ go, onSignOut, hasTrip }) {
   const Tile = ({ label, accent, onClick }) => (
     <button
       onClick={onClick}
@@ -124,22 +132,102 @@ function Home({ go, onSignOut, email }) {
         <button onClick={onSignOut} className="text-xs text-black/40 mt-2 underline">Sign out</button>
       </div>
       <div className="space-y-4">
-        <Tile label="active trip!" onClick={() => go('trip')} />
+        {hasTrip
+          ? <Tile label="active trip!" onClick={() => go('trip')} />
+          : <Tile label="begin a new trip" accent onClick={() => go('newtrip')} />}
         <Tile label="past trips" onClick={() => {}} />
         <Tile label="my inspiration" onClick={() => go('inspo')} />
         <Tile label="add something" accent onClick={() => go('add')} />
       </div>
-      {email && <div className="text-[11px] text-black/30 text-center mt-6">Signed in as {email}</div>}
     </div>
   );
 }
 
-function TripScreen({ back, entries, openEntry }) {
+function TripForm({ back, onSave, initial, saving }) {
+  const today = new Date().toISOString().slice(0,10);
+  const [name, setName] = useState(initial?.name || '');
+  const [startPoint, setStartPoint] = useState(initial?.start_point || 'home');
+  const [startDate, setStartDate] = useState(initial?.start_date || today);
+  const [endPoint, setEndPoint] = useState(initial?.end_point || '');
+  const [endUnknown, setEndUnknown] = useState(initial ? (initial.end_point == null) : false);
+  const [endDate, setEndDate] = useState(initial?.end_date || '');
+
+  const isEdit = !!initial;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSave({
+      name: name.trim(),
+      start_point: startPoint.trim() || 'home',
+      start_date: startDate,
+      end_point: endUnknown ? null : (endPoint.trim() || null),
+      end_date: endDate || null,
+    });
+  };
+
+  const field = "w-full rounded-2xl bg-white px-4 py-3 shadow-soft outline-none focus:ring-2 focus:ring-black/10 text-[15px]";
+  const label = "text-xs uppercase tracking-wider text-black/50 mb-1 block";
+
+  return (
+    <div className="pb-32">
+      <Header title={isEdit ? 'edit trip' : 'new trip'} back={back} />
+      <form onSubmit={submit} className="px-5 space-y-4">
+        <div>
+          <label className={label}>Trip name</label>
+          <input className={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Cornwall & Devon" required />
+        </div>
+        <div>
+          <label className={label}>Start point</label>
+          <input className={field} value={startPoint} onChange={(e) => setStartPoint(e.target.value)} />
+        </div>
+        <div>
+          <label className={label}>Start date</label>
+          <input type="date" className={field} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div>
+          <label className={label}>End point</label>
+          <input
+            className={field}
+            value={endUnknown ? '' : endPoint}
+            onChange={(e) => setEndPoint(e.target.value)}
+            disabled={endUnknown}
+            placeholder={endUnknown ? 'Not sure yet' : 'Where to?'}
+          />
+          <label className="flex items-center gap-2 mt-2 text-sm text-black/60">
+            <input type="checkbox" checked={endUnknown} onChange={(e) => setEndUnknown(e.target.checked)} />
+            Not sure yet
+          </label>
+        </div>
+        <div>
+          <label className={label}>End date</label>
+          <input type="date" className={field} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={back} className="flex-1 py-3 rounded-full border border-black/10 bg-white font-medium">Cancel</button>
+          <button type="submit" disabled={saving} className="flex-1 py-3 rounded-full text-white font-medium disabled:opacity-60" style={{ background: BRAND }}>
+            {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Begin trip')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function TripScreen({ back, entries, openEntry, onEdit }) {
   const [tab, setTab] = useState('overview');
   const days = Array.from(new Set(entries.map(e => e.day)));
   return (
     <div className="pb-28">
-      <Header title="active trip" back={back} />
+      <Header
+        title="active trip"
+        back={back}
+        right={
+          <button onClick={onEdit} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center" aria-label="Edit trip">
+            <IconEdit />
+          </button>
+        }
+      />
       <div className="px-5 flex gap-2 mb-5">
         <Pill active={tab === 'overview'} onClick={() => setTab('overview')}>Overview summary</Pill>
         <Pill active={tab === 'story'} onClick={() => setTab('story')}>Read the story</Pill>
@@ -291,8 +379,9 @@ const CATEGORIES = [
 
 function AddPicker({ close, pick }) {
   return (
-    <Sheet close={close} title="add something">
-      <div className="space-y-3 p-5">
+    <div className="pb-28">
+      <Header title="add something" right={<button onClick={close} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center"><IconX /></button>} />
+      <div className="space-y-3 px-5 pt-2">
         {CATEGORIES.map(c => (
           <button
             key={c.key}
@@ -306,7 +395,7 @@ function AddPicker({ close, pick }) {
           </button>
         ))}
       </div>
-    </Sheet>
+    </div>
   );
 }
 
@@ -343,12 +432,13 @@ function AddForm({ close, back, category, onSave, saving }) {
   };
 
   return (
-    <Sheet
-      close={close}
-      leftLabel="Add"
-      centre={<span className="px-3 py-1 rounded-full text-xs font-medium bg-black/5">{category.label}</span>}
-    >
-      <div className="p-5 space-y-4">
+    <div className="pb-28">
+      <div className="flex items-center justify-between px-5 pt-6 pb-4">
+        <div className="text-sm font-medium text-black/70 min-w-10">Add</div>
+        <span className="px-3 py-1 rounded-full text-xs font-medium bg-black/5">{category.label}</span>
+        <button onClick={close} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center min-w-9"><IconX /></button>
+      </div>
+      <div className="px-5 space-y-4">
         <div className="flex gap-3">
           {category.buttons.map(b => btn(b))}
         </div>
@@ -380,24 +470,6 @@ function AddForm({ close, back, category, onSave, saving }) {
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </Sheet>
-  );
-}
-
-function Sheet({ close, title, leftLabel, centre, children }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/30" onClick={close} />
-      <div className="relative w-full max-w-[390px] bg-[#F4EFE7] rounded-t-3xl shadow-xl max-h-[92%] overflow-y-auto">
-        <div className="flex items-center justify-between px-5 pt-5 pb-2">
-          <div className="text-sm font-medium text-black/70 min-w-10">{leftLabel || ''}</div>
-          <div className="flex-1 text-center text-sm font-medium">{centre || title}</div>
-          <button onClick={close} className="w-9 h-9 rounded-full bg-white shadow-soft flex items-center justify-center min-w-9">
-            <IconX />
-          </button>
-        </div>
-        {children}
       </div>
     </div>
   );
@@ -434,10 +506,11 @@ export default function App() {
     (async () => {
       setLoading(true);
       try {
-        const t = await seedIfEmpty(session.user.id);
+        await seedInspirationIfEmpty(session.user.id);
+        const t = await getActiveTrip();
         setTrip(t);
         const [es, is] = await Promise.all([
-          getEntriesForTrip(t.id),
+          t ? getEntriesForTrip(t.id) : Promise.resolve([]),
           getInspiration(),
         ]);
         setEntries(es.map(toEntry));
@@ -451,13 +524,35 @@ export default function App() {
   }, [session]);
 
   const go = (s) => {
-    if (s === 'add') setAddStep('pick');
-    else setScreen(s);
+    if (s === 'add') { setAddStep('pick'); setScreen('add'); return; }
+    if (s === 'trip' && !trip) { setScreen('newtrip'); return; }
+    setScreen(s);
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setEntries([]); setInspo([]); setTrip(null); setScreen('home');
+  };
+
+  const handleSaveTrip = async (fields) => {
+    if (!session) return;
+    setSaving(true);
+    try {
+      let row;
+      if (screen === 'edittrip' && trip) row = await updateTrip(trip.id, fields);
+      else row = await createTrip(session.user.id, fields);
+      setTrip(row);
+      if (screen !== 'edittrip') {
+        const es = await getEntriesForTrip(row.id);
+        setEntries(es.map(toEntry));
+      }
+      setScreen('trip');
+    } catch (e) {
+      console.error(e);
+      alert('Save failed: ' + e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSave = async ({ text, media, category }) => {
@@ -473,7 +568,7 @@ export default function App() {
         });
         setInspo(prev => [toInspo(row), ...prev]);
       } else {
-        const row = await createEntry(session.user.id, trip.id, {
+        const row = await createEntry(session.user.id, trip?.id ?? null, {
           kind: category === 'tip' ? 'tip' : category === 'note' ? 'note' : 'journal',
           title: text.slice(0, 40) || 'New entry',
           body: text,
@@ -503,9 +598,20 @@ export default function App() {
           <div className="pt-24 text-center text-sm text-black/40">Loading your trip…</div>
         ) : (
           <>
-            {screen === 'home' && <Home go={go} onSignOut={handleSignOut} email={session.user.email} />}
+            {screen === 'home' && <Home go={go} onSignOut={handleSignOut} hasTrip={!!trip} />}
+            {screen === 'newtrip' && (
+              <TripForm back={() => setScreen('home')} onSave={handleSaveTrip} saving={saving} />
+            )}
+            {screen === 'edittrip' && (
+              <TripForm back={() => setScreen('trip')} onSave={handleSaveTrip} saving={saving} initial={trip} />
+            )}
             {screen === 'trip' && !currentEntry && (
-              <TripScreen back={() => setScreen('home')} entries={entries} openEntry={setOpenEntryId} />
+              <TripScreen
+                back={() => setScreen('home')}
+                entries={entries}
+                openEntry={setOpenEntryId}
+                onEdit={() => setScreen('edittrip')}
+              />
             )}
             {screen === 'trip' && currentEntry && (
               <EntryDetail back={() => setOpenEntryId(null)} entry={currentEntry} />
@@ -516,20 +622,19 @@ export default function App() {
             {screen === 'inspo' && currentInspo && (
               <InspoDetail back={() => setOpenInspoId(null)} item={currentInspo} />
             )}
+            {screen === 'add' && addStep === 'pick' && (
+              <AddPicker close={() => setScreen('home')} pick={(c) => setAddStep(c)} />
+            )}
+            {screen === 'add' && addStep && addStep !== 'pick' && (
+              <AddForm
+                category={addStep}
+                close={() => setScreen('home')}
+                back={() => setAddStep('pick')}
+                onSave={handleSave}
+                saving={saving}
+              />
+            )}
           </>
-        )}
-
-        {addStep === 'pick' && (
-          <AddPicker close={() => setAddStep(null)} pick={(c) => setAddStep(c)} />
-        )}
-        {addStep && addStep !== 'pick' && (
-          <AddForm
-            category={addStep}
-            close={() => setAddStep(null)}
-            back={() => setAddStep('pick')}
-            onSave={handleSave}
-            saving={saving}
-          />
         )}
 
         <BottomNav
